@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>香港巴士 Stop ID 專屬實時到站看板</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        kmb: {
+                            DEFAULT: '#E31A22',
+                            dark: '#B81218',
+                            light: '#FEE8E8'
+                        },
+                        citybus: {
+                            DEFAULT: '#FFD100',
+                            dark: '#D4AD00',
+                            light: '#FFF9D6',
+                            accent: '#002B49'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Microsoft JhengHei', 'PingFang TC', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(0.99); }
+        }
+        .arriving-now {
+            animation: pulse-subtle 1.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 shadow-xl">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6">
+            <div class="flex items-center justify-between h-16">
+                
+                <!-- Logo & App Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-amber-500 flex items-center justify-center text-white shadow-lg font-black text-xl">
+                        <i class="fa-solid fa-bus-simple"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-base sm:text-lg font-extrabold leading-tight tracking-wide text-white flex items-center gap-2">
+                            巴士實時到站看板
+                            <span class="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full font-mono font-semibold">SPA</span>
+                        </h1>
+                        <p class="text-xs text-slate-400 hidden sm:block">Personalized Bus ETA Dashboard</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+                    <button id="tab-btn-home" onclick="switchTab('home')" 
+                        class="flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all bg-indigo-600 text-white shadow-md">
+                        <i class="fa-solid fa-gauge-high"></i>
+                        <span>到站看板</span>
+                    </button>
+                    <button id="tab-btn-settings" onclick="switchTab('settings')" 
+                        class="flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span>路線設定</span>
+                        <span id="badge-selected-count" class="hidden bg-slate-800 text-indigo-400 text-[10px] px-1.5 py-0.5 rounded-full font-mono border border-slate-700">0</span>
+                    </button>
+                </nav>
+
+                <!-- Refresh Indicator (Home tab active) -->
+                <div id="refresh-control" class="flex items-center space-x-2 text-xs">
+                    <div class="hidden md:flex items-center bg-slate-900 border border-slate-800 rounded-full px-3 py-1 space-x-2">
+                        <span id="auto-refresh-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span class="text-slate-400 font-medium">更新倒數: <span id="countdown-timer" class="text-amber-400 font-bold font-mono">30</span>s</span>
+                    </div>
+                    <button onclick="fetchETAData(true)" title="立即刷新數據" class="p-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 rounded-xl border border-slate-700 transition-all flex items-center justify-center">
+                        <i id="refresh-icon" class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
+
+        <!-- ==================== TAB 1: HOME DASHBOARD ==================== -->
+        <section id="view-home" class="flex flex-col gap-6">
+            
+            <!-- Station Summary Header Banner -->
+            <div id="home-station-banner" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+                <div class="flex items-start space-x-3">
+                    <div class="p-3 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl mt-0.5">
+                        <i class="fa-solid fa-location-dot text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span id="home-company-badge" class="px-2 py-0.5 text-[10px] font-black rounded bg-red-500/20 text-red-400 border border-red-500/30">九巴 KMB</span>
+                            <span id="home-stop-id-display" class="font-mono text-xs font-semibold text-slate-400">STOP ID: --</span>
+                        </div>
+                        <h2 id="home-stop-name" class="text-xl sm:text-2xl font-black text-white mt-1">--</h2>
+                        <p id="home-stop-subname" class="text-xs text-slate-400 mt-0.5 font-mono">--</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between sm:justify-end w-full sm:w-auto border-t sm:border-t-0 border-slate-800 pt-3 sm:pt-0">
+                    <div class="text-left sm:text-right">
+                        <span class="text-[10px] text-slate-400 block font-semibold">最後更新時間</span>
+                        <span id="home-last-updated" class="text-sm font-mono font-bold text-slate-200">--:--:--</span>
+                    </div>
+                    <button onclick="switchTab('settings')" class="ml-4 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 transition-all flex items-center space-x-1.5">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>修改關注路線</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Unconfigured / Empty Guide State -->
+            <div id="home-empty-state" class="flex flex-col items-center justify-center py-20 px-4 text-center border-2 border-dashed border-slate-800 rounded-3xl bg-slate-900/40">
+                <div class="w-20 h-20 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-3xl mb-5 shadow-inner">
+                    <i class="fa-solid fa-sliders"></i>
+                </div>
+                <h3 class="text-xl font-bold text-white mb-2">尚未設定 Stop ID 與關注路線</h3>
+                <p class="text-slate-400 text-xs sm:text-sm max-w-md mb-6 leading-relaxed">
+                    請前往「路線設定」頁面，輸入您的常用公車車站 Stop ID，並挑選您想要在主畫面監控的巴士路線。
+                </p>
+                <button onclick="switchTab('settings')" class="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center space-x-2">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>實時載入車站設定</span>
+                </button>
+            </div>
+
+            <!-- Loading State -->
+            <div id="home-loading-state" class="hidden flex-1 flex flex-col items-center justify-center py-24 space-y-4">
+                <div class="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
+                <p class="text-slate-300 text-sm font-bold">正在獲取專屬路線實時到站時間...</p>
+            </div>
+
+            <!-- Dashboard ETA Cards Container -->
+            <div id="home-eta-grid" class="hidden grid grid-cols-1 md:grid-cols-2 gap-5">
+                <!-- Dynamically generated route cards -->
+            </div>
+
+        </section>
+
+
+        <!-- ==================== TAB 2: SETTINGS PAGE ==================== -->
+        <section id="view-settings" class="hidden flex flex-col gap-6">
+            
+            <!-- Step 1: Stop ID & Company Form -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
+                <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs uppercase tracking-wider mb-2">
+                    <span class="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-black border border-indigo-500/30">1</span>
+                    <span>設定車站編號 (Stop ID)</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center mt-3">
+                    <!-- Company Switch -->
+                    <div class="md:col-span-4 flex rounded-xl bg-slate-950 p-1.5 border border-slate-800">
+                        <button id="btn-set-kmb" onclick="selectCompanySetting('kmb')" 
+                            class="flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white">
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block mr-1"></span> 九巴 KMB
+                        </button>
+                        <button id="btn-set-citybus" onclick="selectCompanySetting('citybus')" 
+                            class="flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all bg-yellow-500 text-slate-900 shadow-md">
+                            <span class="w-2.5 h-2.5 rounded-full bg-slate-900 inline-block mr-1"></span> 城巴 CTB
+                        </button>
+                    </div>
+
+                    <!-- Stop ID Input Box -->
+                    <div class="md:col-span-8 flex flex-col sm:flex-row gap-3">
+                        <div class="relative flex-1">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-hashtag"></i>
+                            </div>
+                            <input type="text" id="settings-stop-id-input" placeholder="輸入 Stop ID (例如: 6225FE329900326D)..." 
+                                class="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl text-slate-100 text-sm font-mono tracking-wide placeholder-slate-600 transition-all outline-none"
+                                onkeyup="if(event.key === 'Enter') fetchRouteListForStop()">
+                        </div>
+
+                        <button onclick="fetchRouteListForStop()" 
+                            class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center space-x-2 shrink-0">
+                            <i id="btn-fetch-icon" class="fa-solid fa-cloud-arrow-down"></i>
+                            <span>載入路線 / Fetch Routes</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preset Stop Quick Select Tags -->
+                <div class="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+                    <span class="text-slate-400 font-semibold flex items-center mr-1">
+                        <i class="fa-solid fa-lightbulb text-amber-400 mr-1.5"></i> 快速填寫預設 Stop ID：
+                    </span>
+                    <button onclick="fillPresetStop('citybus', '6225FE329900326D')" class="px-2.5 py-1 rounded-lg bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-500/40 text-indigo-200 font-mono font-bold">
+                        城巴 金鐘站-統一中心 (6225FE329900326D)
+                    </button>
+                    <button onclick="fillPresetStop('kmb', 'BS-1A-01')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono">
+                        九巴 中秀茂坪 (BS-1A-01)
+                    </button>
+                    <button onclick="fillPresetStop('kmb', '10293')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono">
+                        九巴 觀塘市中心 (10293)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Route Selection List -->
+            <div id="settings-route-selector-panel" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col gap-4">
+                
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                    <div>
+                        <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs uppercase tracking-wider mb-1">
+                            <span class="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-black border border-indigo-500/30">2</span>
+                            <span>選擇要關注在主畫面的路線</span>
+                        </div>
+                        <h3 id="settings-fetched-stop-title" class="text-lg font-black text-white">--</h3>
+                    </div>
+
+                    <!-- Batch controls -->
+                    <div class="flex items-center space-x-2">
+                        <button onclick="selectAllRoutes(true)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 transition-all">
+                            全選
+                        </button>
+                        <button onclick="selectAllRoutes(false)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg border border-slate-700 transition-all">
+                            取消全選
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Routes Checklist Grid -->
+                <div id="settings-routes-checkbox-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-96 overflow-y-auto custom-scrollbar p-1">
+                    <!-- Dynamic checkbox cards generated by JS -->
+                </div>
+
+                <!-- Save Action Button Bar -->
+                <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+                    <div class="text-xs text-slate-400">
+                        已勾選 <span id="selected-routes-count-label" class="text-indigo-400 font-bold font-mono">0</span> 條路線
+                    </div>
+                    <button onclick="saveSettingsAndReturn()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95 flex items-center space-x-2">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>儲存設定並查看看板</span>
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Loading & Error Indicators for Settings -->
+            <div id="settings-loading-state" class="hidden py-12 flex flex-col items-center justify-center space-y-3">
+                <div class="w-10 h-10 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin"></div>
+                <p class="text-xs text-slate-400">正在向官方 API 查詢此車站之路線列表...</p>
+            </div>
+
+            <div id="settings-error-state" class="hidden p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                <span id="settings-error-msg">查無資料或 Stop ID 格式不正確。</span>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 bg-slate-900 text-white border border-slate-800 px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 transition-all transform translate-y-20 opacity-0 pointer-events-none">
+        <div id="toast-icon" class="w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0">
+            <i class="fa-solid fa-check"></i>
+        </div>
+        <div>
+            <div id="toast-title" class="text-xs font-bold">提示</div>
+            <div id="toast-msg" class="text-[11px] text-slate-400">訊息內容</div>
+        </div>
+    </div>
+
+    <script>
+        // Default Constants
+        const DEFAULT_STOP_ID = '6225FE329900326D';
+        const DEFAULT_COMPANY = 'citybus';
+
+        let appConfig = {
+            company: DEFAULT_COMPANY, // 'kmb' | 'citybus'
+            stopId: DEFAULT_STOP_ID,
+            stopNameTC: '金鐘站 - 統一中心',
+            stopNameEN: 'Admiralty Station - United Centre',
+            selectedRoutes: [] // Array of string route codes
+        };
+
+        let fetchedRoutesList = []; // All routes serving the stop fetched from API
+        let countdownTimer = 30;
+        let refreshInterval = null;
+
+        // Initialize SPA App
+        document.addEventListener('DOMContentLoaded', async () => {
+            loadConfigFromLocalStorage();
+
+            // If no selected routes saved yet, auto setup default stop ID (6225FE329900326D)
+            if (!appConfig.selectedRoutes || appConfig.selectedRoutes.length === 0) {
+                appConfig.stopId = DEFAULT_STOP_ID;
+                appConfig.company = DEFAULT_COMPANY;
+                await autoSetupDefaultStop();
+            } else {
+                updateBadgeCount();
+            }
+
+            // Always open directly in 'home' tab
+            switchTab('home');
+            startAutoRefreshTimer();
+        });
+
+        // Helper to perform initial route setup if opening fresh without localStorage
+        async function autoSetupDefaultStop() {
+            try {
+                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/ctb/${DEFAULT_STOP_ID}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.data && json.data.length > 0) {
+                        const routesSet = new Set();
+                        json.data.forEach(item => {
+                            if (item.route) routesSet.add(item.route);
+                        });
+                        appConfig.selectedRoutes = Array.from(routesSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                    }
+                }
+                saveConfigToLocalStorage();
+            } catch (e) {
+                console.warn("Auto setup default stop error:", e);
+            }
+        }
+
+        // Tab Switching
+        function switchTab(tabName) {
+            const viewHome = document.getElementById('view-home');
+            const viewSettings = document.getElementById('view-settings');
+            const btnHome = document.getElementById('tab-btn-home');
+            const btnSettings = document.getElementById('tab-btn-settings');
+            const refreshControl = document.getElementById('refresh-control');
+
+            if (tabName === 'home') {
+                viewHome.classList.remove('hidden');
+                viewSettings.classList.add('hidden');
+                
+                btnHome.className = "flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all bg-indigo-600 text-white shadow-md";
+                btnSettings.className = "flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white";
+                refreshControl.classList.remove('hidden');
+
+                // If configuration is ready, fetch updated ETAs
+                if (appConfig.stopId && appConfig.selectedRoutes.length > 0) {
+                    fetchETAData(true);
+                }
+            } else {
+                viewHome.classList.add('hidden');
+                viewSettings.classList.remove('hidden');
+
+                btnSettings.className = "flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all bg-indigo-600 text-white shadow-md";
+                btnHome.className = "flex items-center space-x-2 py-1.5 px-3 sm:px-4 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white";
+                refreshControl.classList.add('hidden');
+
+                // Pre-fill input with current or default Stop ID
+                const inputEl = document.getElementById('settings-stop-id-input');
+                inputEl.value = appConfig.stopId || DEFAULT_STOP_ID;
+                selectCompanySetting(appConfig.company || DEFAULT_COMPANY);
+            }
+        }
+
+        // Local Storage Sync
+        function loadConfigFromLocalStorage() {
+            try {
+                const saved = localStorage.getItem('hk_bus_stop_dashboard_config');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed && parsed.stopId) {
+                        appConfig = parsed;
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not load local storage config:", e);
+            }
+        }
+
+        function saveConfigToLocalStorage() {
+            try {
+                localStorage.setItem('hk_bus_stop_dashboard_config', JSON.stringify(appConfig));
+                updateBadgeCount();
+            } catch (e) {
+                console.warn("Could not save to local storage:", e);
+            }
+        }
+
+        function updateBadgeCount() {
+            const badge = document.getElementById('badge-selected-count');
+            if (appConfig.selectedRoutes && appConfig.selectedRoutes.length > 0) {
+                badge.innerText = appConfig.selectedRoutes.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function selectCompanySetting(company) {
+            appConfig.company = company;
+            const btnKmb = document.getElementById('btn-set-kmb');
+            const btnCitybus = document.getElementById('btn-set-citybus');
+
+            if (company === 'kmb') {
+                btnKmb.className = "flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all bg-red-600 text-white shadow-md";
+                btnCitybus.className = "flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white";
+            } else {
+                btnCitybus.className = "flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all bg-yellow-500 text-slate-900 shadow-md";
+                btnKmb.className = "flex-1 py-2 px-3 rounded-lg font-bold text-xs sm:text-sm transition-all text-slate-400 hover:text-white";
+            }
+        }
+
+        function fillPresetStop(company, stopId) {
+            selectCompanySetting(company);
+            document.getElementById('settings-stop-id-input').value = stopId;
+            fetchRouteListForStop();
+        }
+
+        async function fetchRouteListForStop() {
+            const inputVal = document.getElementById('settings-stop-id-input').value.trim();
+            const stopId = inputVal || DEFAULT_STOP_ID;
+            document.getElementById('settings-stop-id-input').value = stopId;
+
+            const loadingEl = document.getElementById('settings-loading-state');
+            const errorEl = document.getElementById('settings-error-state');
+            const panelEl = document.getElementById('settings-route-selector-panel');
+            const iconEl = document.getElementById('btn-fetch-icon');
+
+            loadingEl.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+            panelEl.classList.add('hidden');
+            iconEl.classList.add('fa-spin');
+
+            try {
+                let success = false;
+                let routesFound = new Set();
+                let stopTitle = `車站 (${stopId})`;
+
+                if (appConfig.company === 'kmb') {
+                    // Fetch KMB Stop Name and ETA raw payload to deduce routes
+                    const etaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
+                    if (etaRes.ok) {
+                        const json = await etaRes.json();
+                        if (json.data && json.data.length > 0) {
+                            json.data.forEach(item => {
+                                if (item.route) routesFound.add(item.route);
+                            });
+                            success = true;
+                        }
+                    }
+
+                    // Try loading stop detail name
+                    try {
+                        const nameRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`);
+                        if (nameRes.ok) {
+                            const nameJson = await nameRes.json();
+                            if (nameJson.data) {
+                                stopTitle = `${nameJson.data.name_tc} (${stopId})`;
+                                appConfig.stopNameTC = nameJson.data.name_tc;
+                                appConfig.stopNameEN = nameJson.data.name_en;
+                            }
+                        }
+                    } catch (e) {}
+
+                } else {
+                    // Fetch Citybus Stop Name and ETA
+                    const etaRes = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/ctb/${stopId}`);
+                    if (etaRes.ok) {
+                        const json = await etaRes.json();
+                        if (json.data && json.data.length > 0) {
+                            json.data.forEach(item => {
+                                if (item.route) routesFound.add(item.route);
+                            });
+                            success = true;
+                        }
+                    }
+
+                    // Try loading CTB stop detail name
+                    try {
+                        const nameRes = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/stop/${stopId}`);
+                        if (nameRes.ok) {
+                            const nameJson = await nameRes.json();
+                            if (nameJson.data) {
+                                stopTitle = `${nameJson.data.name_tc} (${stopId})`;
+                                appConfig.stopNameTC = nameJson.data.name_tc;
+                                appConfig.stopNameEN = nameJson.data.name_en;
+                            }
+                        }
+                    } catch (e) {}
+                }
+
+                if (success && routesFound.size > 0) {
+                    appConfig.stopId = stopId;
+                    fetchedRoutesList = Array.from(routesFound).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                    
+                    document.getElementById('settings-fetched-stop-title').innerText = stopTitle;
+                    renderRouteCheckboxes();
+                    panelEl.classList.remove('hidden');
+                } else {
+                    document.getElementById('settings-error-msg').innerText = `無法在【${appConfig.company.toUpperCase()}】獲得 Stop ID "${stopId}" 的路線資料，請確認編號與公司。`;
+                    errorEl.classList.remove('hidden');
+                }
+
+            } catch (err) {
+                console.error("Fetch routes error:", err);
+                document.getElementById('settings-error-msg').innerText = "連線失敗，請檢查網路連線。";
+                errorEl.classList.remove('hidden');
+            } finally {
+                loadingEl.classList.add('hidden');
+                iconEl.classList.remove('fa-spin');
+            }
+        }
+
+        function renderRouteCheckboxes() {
+            const grid = document.getElementById('settings-routes-checkbox-grid');
+            grid.innerHTML = '';
+
+            fetchedRoutesList.forEach(route => {
+                const isChecked = appConfig.selectedRoutes.includes(route);
+
+                const card = document.createElement('label');
+                card.className = `cursor-pointer flex items-center justify-between p-3 rounded-xl border transition-all ${
+                    isChecked 
+                    ? 'bg-indigo-600/20 border-indigo-500 text-white' 
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`;
+
+                card.innerHTML = `
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" value="${route}" ${isChecked ? 'checked' : ''} 
+                            onchange="toggleRouteSelection('${route}', this.checked, this.parentElement.parentElement)"
+                            class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-900 border-slate-700">
+                        <span class="font-mono font-extrabold text-base">${route}</span>
+                    </div>
+                    <i class="fa-solid fa-bus text-xs ${isChecked ? 'text-indigo-400' : 'text-slate-600'}"></i>
+                `;
+
+                grid.appendChild(card);
+            });
+
+            updateSelectedCountLabel();
+        }
+
+        function toggleRouteSelection(route, isChecked, labelEl) {
+            if (isChecked) {
+                if (!appConfig.selectedRoutes.includes(route)) {
+                    appConfig.selectedRoutes.push(route);
+                }
+                labelEl.className = "cursor-pointer flex items-center justify-between p-3 rounded-xl border transition-all bg-indigo-600/20 border-indigo-500 text-white";
+            } else {
+                appConfig.selectedRoutes = appConfig.selectedRoutes.filter(r => r !== route);
+                labelEl.className = "cursor-pointer flex items-center justify-between p-3 rounded-xl border transition-all bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700";
+            }
+            updateSelectedCountLabel();
+        }
+
+        function selectAllRoutes(shouldSelect) {
+            if (shouldSelect) {
+                appConfig.selectedRoutes = [...fetchedRoutesList];
+            } else {
+                appConfig.selectedRoutes = [];
+            }
+            renderRouteCheckboxes();
+        }
+
+        function updateSelectedCountLabel() {
+            document.getElementById('selected-routes-count-label').innerText = appConfig.selectedRoutes.length;
+        }
+
+        function saveSettingsAndReturn() {
+            if (!appConfig.stopId) {
+                showToast("錯誤", "請先設定 Stop ID", "error");
+                return;
+            }
+            if (appConfig.selectedRoutes.length === 0) {
+                showToast("提示", "您尚未選擇任何關注路線", "warning");
+            }
+
+            saveConfigToLocalStorage();
+            showToast("成功", "已儲存您的關注路線設定！", "success");
+            switchTab('home');
+        }
+
+        async function fetchETAData(isManual = false) {
+            const homeEmpty = document.getElementById('home-empty-state');
+            const homeLoading = document.getElementById('home-loading-state');
+            const homeGrid = document.getElementById('home-eta-grid');
+            const homeBanner = document.getElementById('home-station-banner');
+            const refreshIcon = document.getElementById('refresh-icon');
+
+            if (!appConfig.stopId || appConfig.selectedRoutes.length === 0) {
+                homeEmpty.classList.remove('hidden');
+                homeLoading.classList.add('hidden');
+                homeGrid.classList.add('hidden');
+                homeBanner.classList.add('hidden');
+                return;
+            }
+
+            homeEmpty.classList.add('hidden');
+
+            if (isManual) {
+                homeLoading.classList.remove('hidden');
+                homeGrid.classList.add('hidden');
+                resetCountdown();
+            }
+
+            refreshIcon.classList.add('fa-spin');
+
+            try {
+                let rawList = [];
+
+                if (appConfig.company === 'kmb') {
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${appConfig.stopId}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        rawList = json.data || [];
+                    }
+                } else {
+                    const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/ctb/${appConfig.stopId}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        rawList = json.data || [];
+                    }
+                }
+
+                renderDashboard(rawList);
+
+            } catch (err) {
+                console.error("Dashboard fetch ETA error:", err);
+                showToast("連線異常", "更新到站時間時發生錯誤", "error");
+            } finally {
+                homeLoading.classList.add('hidden');
+                refreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        function renderDashboard(rawList) {
+            const homeGrid = document.getElementById('home-eta-grid');
+            const homeBanner = document.getElementById('home-station-banner');
+
+            // Render Banner Info
+            homeBanner.classList.remove('hidden');
+            document.getElementById('home-stop-name').innerText = appConfig.stopNameTC || `車站 (${appConfig.stopId})`;
+            document.getElementById('home-stop-subname').innerText = appConfig.stopNameEN || `STOP ID: ${appConfig.stopId}`;
+            document.getElementById('home-stop-id-display').innerText = `STOP ID: ${appConfig.stopId}`;
+            
+            const badge = document.getElementById('home-company-badge');
+            if (appConfig.company === 'kmb') {
+                badge.innerText = '九巴 KMB';
+                badge.className = 'px-2 py-0.5 text-[10px] font-black rounded bg-red-500/20 text-red-400 border border-red-500/30';
+            } else {
+                badge.innerText = '城巴 CTB';
+                badge.className = 'px-2 py-0.5 text-[10px] font-black rounded bg-yellow-400/20 text-yellow-400 border border-yellow-400/30';
+            }
+
+            const now = new Date();
+            document.getElementById('home-last-updated').innerText = now.toTimeString().split(' ')[0];
+
+            // Group ETA Data by Route (Filtered only by selectedRoutes)
+            const routeGrouped = {};
+
+            // Pre-initialize selected routes to ensure all selected cards appear
+            appConfig.selectedRoutes.forEach(r => {
+                routeGrouped[r] = [];
+            });
+
+            rawList.forEach(eta => {
+                if (eta.route && appConfig.selectedRoutes.includes(eta.route) && eta.eta) {
+                    if (!routeGrouped[eta.route]) routeGrouped[eta.route] = [];
+                    routeGrouped[eta.route].push({
+                        timeStr: eta.eta,
+                        dest: eta.dest_tc || eta.dest_en || '目的站',
+                        rmk: eta.rmk_tc || eta.rmk_en || ''
+                    });
+                }
+            });
+
+            // Clear Grid
+            homeGrid.innerHTML = '';
+            homeGrid.classList.remove('hidden');
+
+            appConfig.selectedRoutes.forEach(routeCode => {
+                const etas = routeGrouped[routeCode] || [];
+                
+                // Sort chronologically
+                etas.sort((a, b) => new Date(a.timeStr) - new Date(b.timeStr));
+
+                const card = createDashboardRouteCard(routeCode, etas);
+                homeGrid.appendChild(card);
+            });
+        }
+
+        // Helper: Build Route Board Card (Focusing on next 3 buses with ENLARGED actual arrival time font)
+        function createDashboardRouteCard(routeCode, etas) {
+            const card = document.createElement('div');
+            card.className = "bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col justify-between hover:border-slate-700 transition-all";
+
+            // Extract Destination from first ETA if available
+            const destName = etas.length > 0 ? etas[0].dest : '載入中...';
+
+            // Next 3 buses ETA slots
+            const next3 = etas.slice(0, 3);
+            let busSlotsHTML = '';
+
+            if (next3.length === 0) {
+                busSlotsHTML = `
+                    <div class="py-6 text-center text-xs text-slate-500 font-medium bg-slate-950/60 rounded-xl border border-slate-800/60 mt-3">
+                        <i class="fa-regular fa-clock mr-1 text-slate-600"></i> 目前暫無即將到達班次
+                    </div>
+                `;
+            } else {
+                busSlotsHTML = '<div class="grid grid-cols-3 gap-2.5 mt-4">';
+                
+                // Create 3 slots
+                for (let i = 0; i < 3; i++) {
+                    if (i < next3.length) {
+                        const item = next3[i];
+                        const etaTime = new Date(item.timeStr);
+                        const now = new Date();
+                        const diffMins = Math.floor((etaTime - now) / 60000);
+
+                        let minutesDisplay = '';
+                        let statusColorClass = 'text-slate-100 bg-slate-950 border-slate-800';
+                        let badgeLabel = `#${i + 1} 班次`;
+
+                        if (diffMins <= 0) {
+                            minutesDisplay = `<span class="text-emerald-400 font-extrabold text-sm sm:text-base">即將到站</span>`;
+                            statusColorClass = 'bg-emerald-500/10 border-emerald-500/30 arriving-now';
+                            badgeLabel = '即將到達';
+                        } else if (diffMins <= 3) {
+                            minutesDisplay = `<div class="flex items-baseline justify-center space-x-1"><span class="text-amber-400 font-black text-2xl font-mono">${diffMins}</span><span class="text-amber-400 text-xs font-bold">分</span></div>`;
+                            statusColorClass = 'bg-amber-500/10 border-amber-500/30';
+                        } else {
+                            minutesDisplay = `<div class="flex items-baseline justify-center space-x-1"><span class="text-white font-black text-2xl font-mono">${diffMins}</span><span class="text-slate-400 text-xs">分</span></div>`;
+                        }
+
+                        const exactTime = etaTime.toTimeString().substring(0, 5);
+
+                        /* 
+                           NOTE: Enlarged the actual ETA timestamp display (exactTime) 
+                           from text-[10px] to text-sm sm:text-base font-extrabold
+                        */
+                        busSlotsHTML += `
+                            <div class="p-3.5 rounded-xl border ${statusColorClass} flex flex-col items-center justify-between text-center min-h-[105px]">
+                                <span class="text-[10px] font-semibold text-slate-400 block">${badgeLabel}</span>
+                                <div class="my-1">${minutesDisplay}</div>
+                                <span class="text-sm sm:text-base font-mono font-extrabold text-indigo-300 tracking-wide">${exactTime}</span>
+                            </div>
+                        `;
+                    } else {
+                        // Empty slot indicator
+                        busSlotsHTML += `
+                            <div class="p-3.5 rounded-xl border border-slate-800/40 bg-slate-950/30 flex flex-col items-center justify-center text-center text-slate-600 min-h-[105px]">
+                                <span class="text-xs font-mono font-bold">--</span>
+                                <span class="text-[10px] mt-1 text-slate-500">尾班車外</span>
+                            </div>
+                        `;
+                    }
+                }
+
+                busSlotsHTML += '</div>';
+            }
+
+            card.innerHTML = `
+                <div>
+                    <!-- Header: Route Code & Destination -->
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl sm:text-3xl font-black font-mono tracking-tight text-white bg-slate-950 px-3.5 py-1 rounded-xl border border-slate-800 shadow-inner">
+                                ${routeCode}
+                            </span>
+                            <div>
+                                <span class="text-[10px] font-bold text-slate-500 block uppercase">往 Destination</span>
+                                <span class="text-sm sm:text-base font-extrabold text-slate-100 truncate max-w-[160px] sm:max-w-[200px] block">
+                                    ${destName}
+                                </span>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-black px-2 py-0.5 rounded ${appConfig.company === 'kmb' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-yellow-400/10 text-yellow-400 border border-yellow-400/20'}">
+                            ${appConfig.company.toUpperCase()}
+                        </span>
+                    </div>
+
+                    <!-- Next 3 Bus Slots -->
+                    ${busSlotsHTML}
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Timer Functions
+        function startAutoRefreshTimer() {
+            if (refreshInterval) clearInterval(refreshInterval);
+
+            refreshInterval = setInterval(() => {
+                countdownTimer--;
+                document.getElementById('countdown-timer').innerText = countdownTimer;
+
+                if (countdownTimer <= 0) {
+                    if (appConfig.stopId && appConfig.selectedRoutes.length > 0) {
+                        fetchETAData(false);
+                    }
+                    resetCountdown();
+                }
+            }, 1000);
+        }
+
+        function resetCountdown() {
+            countdownTimer = 30;
+            document.getElementById('countdown-timer').innerText = countdownTimer;
+        }
+
+        // Toast Helper
+        function showToast(title, msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-msg').innerText = msg;
+
+            if (type === 'error') {
+                icon.className = "w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shrink-0";
+                icon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            } else if (type === 'warning') {
+                icon.className = "w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs shrink-0";
+                icon.innerHTML = '<i class="fa-solid fa-exclamation"></i>';
+            } else {
+                icon.className = "w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs shrink-0";
+                icon.innerHTML = '<i class="fa-solid fa-check"></i>';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
